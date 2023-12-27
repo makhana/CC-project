@@ -1,0 +1,46 @@
+//Test 303
+
+program test_303
+
+namespace Predmeti{
+
+	class Predmet
+	{
+		 int tezina;
+		 char vrsta;
+		 int niz[];
+		{
+			 
+		}
+	}
+
+	
+	
+	{}
+}
+
+const int cinilac = 4, delilac = 3;
+
+
+int zapreminaK, zapreminaS;
+int tezinaK, tezinaS;
+{
+
+	
+		
+	void main() Predmeti::Predmet p; int t1, t2, t3, a[];   int arrRight[], arrLeft[], arr[], i; Predmeti::Predmet predmeti[];
+	{
+		
+		
+		predmeti = new Predmeti::Predmet[3];
+		for(i = 0; i< 3; i++){
+			predmeti[i] = new Predmeti::Predmet();
+			predmeti[i].niz = new int[2];
+		}
+		
+		
+		predmeti[1].niz[0] = 3;
+		print(predmeti[1].niz[0]);
+
+	}
+}
