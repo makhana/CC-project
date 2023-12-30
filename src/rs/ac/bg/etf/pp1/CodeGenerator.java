@@ -28,10 +28,8 @@ public class CodeGenerator extends VisitorAdaptor {
 
 	public List<Integer> listToFillJumps = new ArrayList<>();
 
-//	public List<Integer> forLoopTop = new ArrayList<>();
-//	public List<Integer> forLoopEnd = new ArrayList<>();
+	
 	public Stack<Integer> forLoopTopAddresses = new Stack<>();
-
 	public Stack<Integer> forLoopBodyAddresses = new Stack<>();
 	public Stack<Integer> forLoopThirdConditionStart = new Stack<>();
 
@@ -49,6 +47,11 @@ public class CodeGenerator extends VisitorAdaptor {
 	public List<Integer> indexesToSkip;
 	public List<Integer> designatorType;// 0 - VAR ; 1 - ELEM ; 2 - FLD
 	boolean unpackingStart = false;
+
+	// class static initializer
+	boolean firstStaticInitializerStart = false;
+	int firstStaticInitializerAdr;
+	int nextStaticInitializerAdr;
 
 	private int mainPc;
 
@@ -91,7 +94,12 @@ public class CodeGenerator extends VisitorAdaptor {
 
 	public void visit(MethodTypeName methodTypeName) {
 		if (methodTypeName.getMethName().equalsIgnoreCase("main")) {
-			mainPc = Code.pc;
+			if (firstStaticInitializerStart == true) {
+				Code.fixup(nextStaticInitializerAdr);
+			} else {
+				mainPc = Code.pc;
+			}
+
 		}
 		methodTypeName.obj.setAdr(Code.pc);
 
@@ -171,8 +179,10 @@ public class CodeGenerator extends VisitorAdaptor {
 		Designator designator = assignmentStatement.getDesignator();
 
 		if (designator instanceof DesignatorIdent || designator instanceof DesignatorNamespace) {
+			// var
 			Code.store(assignmentStatement.getDesignator().obj);
 		} else if (designator instanceof DesignatorArrayElem) {
+			// array elem
 			Designator des = ((DesignatorArrayElem) designator).getDesignator();
 			if (des.obj.getType().getElemType().assignableTo(Tab.charType)) {
 				Code.put(Code.bastore);
@@ -180,12 +190,9 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put(Code.astore);
 			}
 		} else {
-//			Code.load(assignmentStatement.getDesignator().obj);
-//			Code.put(Code.dup_x1);
-//			Code.put(Code.pop);
+			// class field
 			Code.store(assignmentStatement.getDesignator().obj);
 
-			// moram da dovrsim za element KLASE
 		}
 
 	}
@@ -225,15 +232,12 @@ public class CodeGenerator extends VisitorAdaptor {
 			Code.loadConst(1);
 			Code.put(Code.sub);
 			Code.put(Code.astore);
-
-			// PROVERI
 		} else {
 			Code.put(Code.dup);
 			Code.load(designator.obj);
 			Code.loadConst(1);
 			Code.put(Code.sub);
 			Code.store(designator.obj);
-			// TO DO
 		}
 	}
 
@@ -247,8 +251,10 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 		if (designator instanceof DesignatorIdent || designator instanceof DesignatorNamespace) {
+			// var
 			Code.store(designator.obj);
 		} else if (designator instanceof DesignatorArrayElem) {
+			// array elem
 			Designator des = ((DesignatorArrayElem) designator).getDesignator();
 			if (des.obj.getType().getElemType().assignableTo(Tab.charType)) {
 				Code.put(Code.bastore);
@@ -257,7 +263,8 @@ public class CodeGenerator extends VisitorAdaptor {
 			}
 
 		} else {
-			// ZA KLASE
+			// class field
+			Code.store(readStatement.getDesignator().obj);
 		}
 	}
 
@@ -268,7 +275,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		Code.put2(offset);
 
 		if (designatorFuncionCall.getDesignator().obj.getType() != Tab.noType) {
-			// nije void funkcija
+			// not a void function
 			Code.put(Code.pop);
 		}
 	}
@@ -280,7 +287,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		Code.put2(offset);
 
 		if (designatorFuncionCall.getDesignator().obj.getType() != Tab.noType) {
-			// nije void funkcija
+			// not a void function
 			Code.put(Code.pop);
 		}
 	}
@@ -295,7 +302,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		SyntaxNode parent = designator.getParent();
 
 		if (FactorDesignator.class == parent.getClass() || IncDesignatorStatement.class == parent.getClass()
-				|| DecDesignatorStatement.class == parent.getClass()) {
+				|| DecDesignatorStatement.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass()) {
 			Code.load(designator.obj);
 		}
 
@@ -305,7 +312,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		SyntaxNode parent = designator.getParent();
 
 		if (FactorDesignator.class == parent.getClass() || IncDesignatorStatement.class == parent.getClass()
-				|| DecDesignatorStatement.class == parent.getClass()) {
+				|| DecDesignatorStatement.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass()) {
 			Code.load(designator.obj);
 		}
 
@@ -316,13 +323,9 @@ public class CodeGenerator extends VisitorAdaptor {
 		Designator des = designator.getDesignator();
 
 		if (FactorDesignator.class == parent.getClass()) {
-			// expr je na steku
-			
-			if(des.obj.getKind() == Obj.Fld) {
-				int temp = Code.get(Code.pc-1);
-				Code.put(Code.pop);
-				Code.load(des.obj);
-				Code.put(temp);
+			// expr is on stack
+			if (des instanceof DesignatorClassMember) {
+
 				if (designator.getDesignator().obj.getType().getElemType().assignableTo(Tab.charType)) {
 					Code.put(Code.baload);
 				} else {
@@ -338,83 +341,55 @@ public class CodeGenerator extends VisitorAdaptor {
 					Code.put(Code.aload);
 				}
 			}
-			
-			
 
-			// PROVERI OVO
 		} else if (AssignopDesignatorStatement.class == parent.getClass()
 				|| IncDesignatorStatement.class == parent.getClass()
 				|| DecDesignatorStatement.class == parent.getClass() || ReadStatement.class == parent.getClass()) {
-			// ovde imam problem za klasu
-			if(des.obj.getKind() == Obj.Fld) {
-				int temp = Code.get(Code.pc-1);
-				Code.put(Code.pop);
-				Code.load(des.obj);
-				Code.put(temp);
-				
+
+			if (des instanceof DesignatorClassMember) {
+
 			} else {
 				Code.load(des.obj);
 				Code.put(Code.dup_x1);
 				Code.put(Code.pop);
 			}
-			
-		}
-		
-		if(DesignatorClassMember.class == parent.getClass()) {
-			Code.load(des.obj);
-			Code.put(Code.dup_x1);
-			Code.put(Code.pop);
 		}
 
 		// unpacking
 		if (DesignatorListStmtDesignator.class == parent.getClass()) {
-			// expr je na steku
-			if(des.obj.getKind() == Obj.Fld) {
-				int temp = Code.get(Code.pc-1);
-				Code.put(Code.pop);
-				Code.load(des.obj);
-				Code.put(temp);
-				
+			// expr is on stack
+			if (des instanceof DesignatorClassMember) {
+
 			} else {
 				Code.load(des.obj);
 				Code.put(Code.dup_x1);
 				Code.put(Code.pop);
 			}
+//			if (des.obj.getKind() == Obj.Fld) {
+//				int temp = Code.get(Code.pc - 1);
+//				Code.put(Code.pop);
+//				Code.load(des.obj);
+//				Code.put(temp);
+//
+//			} else {
+//				Code.load(des.obj);
+//				Code.put(Code.dup_x1);
+//				Code.put(Code.pop);
+//			}
 		}
 	}
 
 	public void visit(DesignatorClassMember designator) {
 		SyntaxNode parent = designator.getParent();
 		Designator des = designator.getDesignator();
-		
-		
-		Code.load(des.obj);
-		
-		
-//		if (FactorDesignator.class == parent.getClass()) {
-//
-//			Code.load(des.obj);
-//			// TO DO
-//
-//		} else if (AssignopDesignatorStatement.class == parent.getClass()
-//				|| IncDesignatorStatement.class == parent.getClass()
-//				|| DecDesignatorStatement.class == parent.getClass() || ReadStatement.class == parent.getClass()) {
-//			
-//			
-//			Code.load(des.obj);
-//
-//		}
-//
-//		// unpacking
-//		if (DesignatorListStmtDesignator.class == parent.getClass()) {
-//			// expr je na steku
-//			Code.load(des.obj);
-//		}
-//		
-//		if(DesignatorArrayElem.class == parent.getClass()) {
-//			Code.load(des.obj);
-//			//Code.load(((DesignatorArrayElem)parent).getDesignator().obj);
-//		}
+
+		if ((FactorDesignator.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass())
+				&& des.obj.getKind() != Obj.Type) {
+			Code.load(des.obj);
+			Code.load(designator.obj);
+		} else {
+			Code.load(des.obj);
+		}
 	}
 
 	/*
@@ -423,12 +398,6 @@ public class CodeGenerator extends VisitorAdaptor {
 	 * 
 	 */
 
-	public void visit(FactorDesignator factorDesignator) {
-		Designator designator = factorDesignator.getDesignator();
-		if (designator.obj.getKind() == Obj.Fld) {
-			Code.load(designator.obj);
-		}
-	}
 
 	public void visit(FactorNum factorNum) {
 		Obj con = Tab.insert(Obj.Con, "numConst", factorNum.struct);
@@ -863,12 +832,12 @@ public class CodeGenerator extends VisitorAdaptor {
 					Code.put(Code.aload);
 				}
 				// provera ako je char onda bastore
-				if(unpackingObj.get(cnt).getType().getElemType() == Tab.charType) {
+				if (unpackingObj.get(cnt).getType().getElemType() == Tab.charType) {
 					Code.put(Code.bastore);
 				} else {
 					Code.put(Code.astore);
 				}
-				
+
 			} else if (designatorType.get(cnt) == 2) {
 				// fld
 				Code.load(objDesignatorEq);
@@ -955,6 +924,26 @@ public class CodeGenerator extends VisitorAdaptor {
 
 		Code.fixup(jumpAdr);
 		Code.put(Code.pop); // remove cnt
+	}
+
+	/*
+	 * 
+	 * STATIC INITIALIZERS
+	 * 
+	 */
+
+	public void visit(StaticInitializerStart staticInitializer) {
+		if (firstStaticInitializerStart == false) {
+			firstStaticInitializerStart = true;
+			mainPc = Code.pc;
+		} else {
+			Code.fixup(nextStaticInitializerAdr);
+		}
+	}
+
+	public void visit(StaticInitializer staticInitializer) {
+		Code.putJump(0);
+		nextStaticInitializerAdr = Code.pc - 2;
 	}
 
 }
