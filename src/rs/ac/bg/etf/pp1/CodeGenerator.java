@@ -2,18 +2,17 @@ package rs.ac.bg.etf.pp1;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Stack;
 
+import javafx.util.Pair;
 import rs.ac.bg.etf.pp1.CounterVisitor.CondTermCounter;
 import rs.ac.bg.etf.pp1.CounterVisitor.DesignatorUnpackingCounter;
 import rs.ac.bg.etf.pp1.CounterVisitor.FormParamCounter;
 import rs.ac.bg.etf.pp1.CounterVisitor.VarCounter;
 import rs.ac.bg.etf.pp1.ast.*;
 import rs.etf.pp1.mj.runtime.Code;
-
-import rs.etf.pp1.symboltable.concepts.Obj;
-
 import rs.etf.pp1.symboltable.*;
 
 import rs.etf.pp1.symboltable.concepts.*;
@@ -28,7 +27,6 @@ public class CodeGenerator extends VisitorAdaptor {
 
 	public List<Integer> listToFillJumps = new ArrayList<>();
 
-	
 	public Stack<Integer> forLoopTopAddresses = new Stack<>();
 	public Stack<Integer> forLoopBodyAddresses = new Stack<>();
 	public Stack<Integer> forLoopThirdConditionStart = new Stack<>();
@@ -53,10 +51,35 @@ public class CodeGenerator extends VisitorAdaptor {
 	int firstStaticInitializerAdr;
 	int nextStaticInitializerAdr;
 
+	// class TVF
+
+	public HashMap<Obj, List<Pair<Obj, Integer>>> classMethodsAdr = new HashMap<>(); // obj klase, <obj metode, adresa
+																						// metode>
+	
+	boolean classDeclStart = false;
+	Obj currentClass = null;
+	Obj thisObj = null;
+
+	public HashMap<Struct, Integer> classTVFAdr = new HashMap<>(); // struct klase, njena TVF adresa
+	int startOfTVF = Code.dataSize;
+
+	Obj classExtends = null;
+	int staticField = Code.dataSize++;
+	boolean foundClassMember = false;
+	
+	Obj currentMethod = null;
+
+	public List<Integer> tvfInitialize = new ArrayList<>();
+	boolean firstTVF = false;
+
 	private int mainPc;
 
 	public int getMainPc() {
 		return mainPc;
+	}
+
+	public int getDataSize() {
+		return startOfTVF;
 	}
 
 	public CodeGenerator() {
@@ -112,15 +135,45 @@ public class CodeGenerator extends VisitorAdaptor {
 		FormParamCounter fpCnt = new FormParamCounter();
 		methodNode.traverseTopDown(fpCnt);
 
-		// generate entry
+		int cnt = 0;
+		
+		if (classDeclStart == true) {
+			
+			// ako klasa nasledjuje ispravi metode koje je redefinisala
+			boolean found = false;
+			if (classExtends != null) {
+				for (int i = 0; i < classMethodsAdr.get(currentClass).size(); i++) {
+					if (classMethodsAdr.get(currentClass).get(i).getKey().getName() == methodTypeName.obj.getName()) {
+						classMethodsAdr.get(currentClass).set(i, new Pair<>(methodTypeName.obj, Code.pc));
+						found = true;
+					}
+				}
+			}
+
+			if (!found) {
+				classMethodsAdr.get(currentClass).add(new Pair<>(methodTypeName.obj, Code.pc));
+			}
+
+			cnt = 1;
+			Collection<Obj> locals = methodTypeName.obj.getLocalSymbols();
+			for (Obj obj : locals) {
+				thisObj = obj; // implicitni this parametar tekuce metode
+				break;
+			}
+
+		}
+
+		
 		Code.put(Code.enter);
-		Code.put(fpCnt.getCount());
-		Code.put(varCnt.getCount() + fpCnt.getCount());
+		Code.put(fpCnt.getCount() + cnt);
+		Code.put(varCnt.getCount() + fpCnt.getCount() + cnt);
+		
+		
 
 	}
 
 	public void visit(MethodDeclNoError methodDecl) {
-
+		
 		Code.put(Code.exit);
 		Code.put(Code.return_);
 
@@ -195,6 +248,25 @@ public class CodeGenerator extends VisitorAdaptor {
 
 		}
 
+		Expr expr = assignmentStatement.getExpr();
+		if(expr instanceof ExprTerm) {
+			Term term = ((ExprTerm)expr).getTerm();
+			if(term instanceof SingleTerm) {
+				Factor factor = ((SingleTerm)term).getFactor();
+				if (factor instanceof FactorNewType) {
+
+					Code.load(assignmentStatement.getDesignator().obj);
+					Code.loadConst(classTVFAdr.get(assignmentStatement.getExpr().struct));
+					Code.put(Code.putfield);
+					Code.put2(0);
+				}
+			}
+		}
+		
+		
+		
+		
+
 	}
 
 	public void visit(IncDesignatorStatement incDesignatorStatement) {
@@ -268,11 +340,58 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 	}
 
+	
+	/*
+	 * 
+	 * FUNCTION CALLS
+	 * 
+	 */
+	
 	public void visit(FuncCallDesignatorStatement designatorFuncionCall) {
 		Obj functionObj = designatorFuncionCall.getDesignator().obj;
-		int offset = functionObj.getAdr() - Code.pc;
-		Code.put(Code.call);
-		Code.put2(offset);
+		Collection<Obj> temp = functionObj.getLocalSymbols();
+		String methodName = designatorFuncionCall.getDesignator().obj.getName();
+		for (Obj obj : temp) {
+
+			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
+				// prvi parametar je this znaci ovo je metoda klase
+
+				
+				if(foundClassMember == false) {
+					// kada smo unutar klase i unutar metode ovo je implicitno this
+					Code.load(thisObj);
+					Code.load(thisObj);
+				} else {
+					// polje klase
+					Code.put(Code.getstatic);
+					Code.put2(staticField);
+					foundClassMember = false;
+				}
+				
+				Code.put(Code.getfield);
+				Code.put2(0);
+				Code.put(Code.invokevirtual);
+
+				for (int i = 0; i < methodName.length(); i++) {
+					Code.put4(methodName.charAt(i));
+				}
+				Code.put4(-1);
+
+			} else {
+				// obicna metoda
+				int offset = functionObj.getAdr() - Code.pc;
+				Code.put(Code.call);
+				Code.put2(offset);
+			}
+			break;
+		}
+
+		if (temp.isEmpty()) {
+			// obicna metoda
+			int offset = functionObj.getAdr() - Code.pc;
+			Code.put(Code.call);
+			Code.put2(offset);
+		}
 
 		if (designatorFuncionCall.getDesignator().obj.getType() != Tab.noType) {
 			// not a void function
@@ -282,14 +401,147 @@ public class CodeGenerator extends VisitorAdaptor {
 
 	public void visit(FuncCallDesignatorStatementActPars designatorFuncionCall) {
 		Obj functionObj = designatorFuncionCall.getDesignator().obj;
-		int offset = functionObj.getAdr() - Code.pc;
-		Code.put(Code.call);
-		Code.put2(offset);
+		Collection<Obj> temp = functionObj.getLocalSymbols();
+		String methodName = designatorFuncionCall.getDesignator().obj.getName();
+		for (Obj obj : temp) {
+
+			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
+				// prvi parametar je this znaci ovo je metoda klase
+
+				if(foundClassMember == false) {
+					// kada smo unutar klase i unutar metode ovo je implicitno this
+					Code.load(thisObj);
+					Code.load(thisObj);
+				} else {
+					// polje klase
+					Code.put(Code.getstatic);
+					Code.put2(staticField);
+					foundClassMember = false;
+				}
+				
+				Code.put(Code.getfield);
+				Code.put2(0);
+				Code.put(Code.invokevirtual);
+
+				for (int i = 0; i < methodName.length(); i++) {
+					Code.put4(methodName.charAt(i));
+				}
+				Code.put4(-1);
+
+			} else {
+				// obicna metoda
+				int offset = functionObj.getAdr() - Code.pc;
+				Code.put(Code.call);
+				Code.put2(offset);
+			}
+			break;
+		}
+
+		if (temp.isEmpty()) {
+			int offset = functionObj.getAdr() - Code.pc;
+			Code.put(Code.call);
+			Code.put2(offset);
+		}
 
 		if (designatorFuncionCall.getDesignator().obj.getType() != Tab.noType) {
 			// not a void function
 			Code.put(Code.pop);
 		}
+	}
+	
+	public void visit(FactorFunctionCall functionCall) {
+		Obj functionObj = functionCall.getDesignator().obj;
+		Collection<Obj> temp = functionObj.getLocalSymbols();
+		String methodName = functionCall.getDesignator().obj.getName();
+		for (Obj obj : temp) {
+
+			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
+				// prvi parametar je this znaci ovo je metoda klase
+
+				if(foundClassMember == false) {
+					// kada smo unutar klase i unutar metode ovo je implicitno this
+					Code.load(thisObj);
+					Code.load(thisObj);
+				} else {
+					// polje neke klase
+					Code.put(Code.getstatic);
+					Code.put2(staticField);
+					foundClassMember = false;
+				}
+
+			
+				Code.put(Code.getfield);
+				Code.put2(0);
+				Code.put(Code.invokevirtual);
+
+				for (int i = 0; i < methodName.length(); i++) {
+					Code.put4(methodName.charAt(i));
+				}
+				Code.put4(-1);
+
+			} else {
+				// obicna metoda
+				int offset = functionObj.getAdr() - Code.pc;
+				Code.put(Code.call);
+				Code.put2(offset);
+			}
+			break;
+		}
+
+		if (temp.isEmpty()) {
+			// obicna metoda
+			int offset = functionObj.getAdr() - Code.pc;
+			Code.put(Code.call);
+			Code.put2(offset);
+		}
+
+	}
+
+	public void visit(FactorFunctionCallParam functionCall) {
+		Obj functionObj = functionCall.getDesignator().obj;
+		Collection<Obj> temp = functionObj.getLocalSymbols();
+		String methodName = functionCall.getDesignator().obj.getName();
+		for (Obj obj : temp) {
+
+			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
+				// prvi parametar je this znaci ovo je metoda klase
+
+				if(foundClassMember == false) {
+					// kada smo unutar klase i unutar metode ovo je implicitno this
+					Code.load(thisObj);
+					Code.load(thisObj);
+				} else {
+					// polje neke klase
+					Code.put(Code.getstatic);
+					Code.put2(staticField); 
+					foundClassMember = false;
+				}
+				
+				Code.put(Code.getfield);
+				Code.put2(0);
+				Code.put(Code.invokevirtual);
+
+				for (int i = 0; i < methodName.length(); i++) {
+					Code.put4(methodName.charAt(i));
+				}
+				Code.put4(-1);
+
+			} else {
+				// obicna metoda
+				int offset = functionObj.getAdr() - Code.pc;
+				Code.put(Code.call);
+				Code.put2(offset);
+			}
+			break;
+		}
+
+		if (temp.isEmpty()) {
+			// obicna metoda
+			int offset = functionObj.getAdr() - Code.pc;
+			Code.put(Code.call);
+			Code.put2(offset);
+		}
+
 	}
 
 	/*
@@ -301,8 +553,13 @@ public class CodeGenerator extends VisitorAdaptor {
 	public void visit(DesignatorIdent designator) {
 		SyntaxNode parent = designator.getParent();
 
+		if (designator.obj.getKind() == Obj.Fld && thisObj != null) {
+			Code.load(thisObj);
+		}
+
 		if (FactorDesignator.class == parent.getClass() || IncDesignatorStatement.class == parent.getClass()
-				|| DecDesignatorStatement.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass()) {
+				|| DecDesignatorStatement.class == parent.getClass()
+				|| DesignatorArrayElem.class == parent.getClass()) {
 			Code.load(designator.obj);
 		}
 
@@ -312,7 +569,8 @@ public class CodeGenerator extends VisitorAdaptor {
 		SyntaxNode parent = designator.getParent();
 
 		if (FactorDesignator.class == parent.getClass() || IncDesignatorStatement.class == parent.getClass()
-				|| DecDesignatorStatement.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass()) {
+				|| DecDesignatorStatement.class == parent.getClass()
+				|| DesignatorArrayElem.class == parent.getClass()) {
 			Code.load(designator.obj);
 		}
 
@@ -332,9 +590,9 @@ public class CodeGenerator extends VisitorAdaptor {
 					Code.put(Code.aload);
 				}
 			} else {
-				Code.load(des.obj);
-				Code.put(Code.dup_x1);
-				Code.put(Code.pop);
+//				Code.load(des.obj);
+//				Code.put(Code.dup_x1);
+//				Code.put(Code.pop);
 				if (designator.getDesignator().obj.getType().getElemType().assignableTo(Tab.charType)) {
 					Code.put(Code.baload);
 				} else {
@@ -347,11 +605,13 @@ public class CodeGenerator extends VisitorAdaptor {
 				|| DecDesignatorStatement.class == parent.getClass() || ReadStatement.class == parent.getClass()) {
 
 			if (des instanceof DesignatorClassMember) {
-
+				
 			} else {
-				Code.load(des.obj);
-				Code.put(Code.dup_x1);
-				Code.put(Code.pop);
+//				Code.put(Code.dup); // OVA LINIJA JE DODATA ZBOG metoda klase proveri za kasnije
+//				Code.load(des.obj);
+//				Code.put(Code.dup_x1);
+//				Code.put(Code.pop);
+
 			}
 		}
 
@@ -361,9 +621,9 @@ public class CodeGenerator extends VisitorAdaptor {
 			if (des instanceof DesignatorClassMember) {
 
 			} else {
-				Code.load(des.obj);
-				Code.put(Code.dup_x1);
-				Code.put(Code.pop);
+//				Code.load(des.obj);
+//				Code.put(Code.dup_x1);
+//				Code.put(Code.pop);
 			}
 //			if (des.obj.getKind() == Obj.Fld) {
 //				int temp = Code.get(Code.pc - 1);
@@ -383,13 +643,26 @@ public class CodeGenerator extends VisitorAdaptor {
 		SyntaxNode parent = designator.getParent();
 		Designator des = designator.getDesignator();
 
-		if ((FactorDesignator.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass())
-				&& des.obj.getKind() != Obj.Type) {
-			Code.load(des.obj);
+		if (des.obj.getKind() == Obj.Type) {
 			Code.load(designator.obj);
 		} else {
-			Code.load(des.obj);
+			if ((FactorDesignator.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass())) {
+				Code.load(des.obj);
+				Code.load(designator.obj);
+			} else if(FuncCallDesignatorStatementActPars.class == parent.getClass() || FuncCallDesignatorStatement.class == parent.getClass() || FactorFunctionCall.class == parent.getClass() || FactorFunctionCall.class == parent.getClass()){
+				Code.load(des.obj);
+				Code.put(Code.dup);
+				Code.put(Code.putstatic);
+				Code.put2(staticField); // adresa pomocne staticke promenljive
+				foundClassMember = true;
+			} else {
+				Code.load(des.obj);
+				Code.put(Code.dup);
+				Code.put(Code.putstatic);
+				Code.put2(staticField); // adresa pomocne staticke promenljive
+			}
 		}
+		
 	}
 
 	/*
@@ -397,7 +670,6 @@ public class CodeGenerator extends VisitorAdaptor {
 	 * FACTOR
 	 * 
 	 */
-
 
 	public void visit(FactorNum factorNum) {
 		Obj con = Tab.insert(Obj.Con, "numConst", factorNum.struct);
@@ -424,19 +696,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		Code.load(con); // put on expression stack
 	}
 
-	public void visit(FactorFunctionCall functionCall) {
-		Obj functionObj = functionCall.getDesignator().obj;
-		int offset = functionObj.getAdr() - Code.pc;
-		Code.put(Code.call);
-		Code.put2(offset);
-	}
-
-	public void visit(FactorFunctionCallParam functionCall) {
-		Obj functionObj = functionCall.getDesignator().obj;
-		int offset = functionObj.getAdr() - Code.pc;
-		Code.put(Code.call);
-		Code.put2(offset);
-	}
+	
 
 	public void visit(FactorNewExpr factorNewExpr) {
 		if (factorNewExpr.getType().struct.assignableTo(Tab.charType)) {
@@ -459,6 +719,20 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 		size = numOfFields * 4;
+
+		SyntaxNode parent = factorNewType.getParent();
+		if (parent.getParent().getParent().getClass() == AssignopDesignatorStatement.class) {
+			Designator des = ((AssignopDesignatorStatement) parent.getParent().getParent()).getDesignator();
+
+			if (des.obj.getName().contains("elem")) {
+				int temp = Code.get(Code.pc - 1);
+				Code.put(Code.pop);
+				Code.put(Code.dup);
+				Code.put(temp);
+				Code.put(Code.dup_x1);
+			}
+		}
+
 		Code.put(Code.new_);
 		Code.put2(size);
 
@@ -700,22 +974,15 @@ public class CodeGenerator extends VisitorAdaptor {
 
 	public void visit(ForLoopStart forLoopStart) {
 		// ovo je moj top ali bez designatorStatement
-//		forLoopTop.add(new ArrayList<>());
 		forLoopEnd.add(new ArrayList<>());
 	}
 
 	public void visit(ForLoopTop forLoop) {
 		forLoopTopAddresses.push(Code.pc);
-//		listToFillJumps = forLoopTop.pop();
-//		while (listToFillJumps.size() != 0) {
-//			int adr = listToFillJumps.remove(listToFillJumps.size() - 1);
-//			Code.fixup(adr);
-//		}
 	}
 
 	public void visit(SingleCondFact condFact) {
 		// ako nije ispunjen skoci na FOR END
-//		listToFillJumps = forLoopTop.pop();
 
 		// ovde moram da pushujem condition
 
@@ -944,6 +1211,93 @@ public class CodeGenerator extends VisitorAdaptor {
 	public void visit(StaticInitializer staticInitializer) {
 		Code.putJump(0);
 		nextStaticInitializerAdr = Code.pc - 2;
+	}
+
+	/*
+	 * 
+	 * TVF for class methods
+	 * 
+	 */
+
+	public void visit(YesExtendsType yesExtendsType) {
+		classExtends = yesExtendsType.obj;
+
+	}
+
+	public void visit(ClassName className) {
+		classDeclStart = true;
+
+	}
+
+	public void visit(YesStaticInitializerList yesStaticInitializer) {
+		currentClass = yesStaticInitializer.obj;
+
+
+		if (classExtends != null) {
+			classMethodsAdr.put(yesStaticInitializer.obj, classMethodsAdr.get(classExtends));
+
+		} else {
+			classMethodsAdr.put(yesStaticInitializer.obj, new ArrayList<>());
+		}
+	}
+
+	public void visit(NoStaticInitializerList noStaticInitializer) {
+		currentClass = noStaticInitializer.obj;
+
+
+		if (classExtends != null) {
+			classMethodsAdr.put(noStaticInitializer.obj, classMethodsAdr.get(classExtends));
+
+		} else {
+			classMethodsAdr.put(noStaticInitializer.obj, new ArrayList<>());
+		}
+	}
+
+	public void visit(ClassDeclNoError classDecl) {
+
+		// WRITE TVF for current class
+
+		if (classMethodsAdr.get(currentClass).size() != 0) {
+			classTVFAdr.put(currentClass.getType(), Code.dataSize);
+			tvfInitialize.add(Code.pc);
+
+			List<Pair<Obj, Integer>> temp = classMethodsAdr.get(currentClass);
+
+			if (firstStaticInitializerStart == true) {
+				Code.fixup(nextStaticInitializerAdr);
+			} else {
+				firstStaticInitializerStart = true;
+				mainPc = Code.pc;
+			}
+
+			for (int i = 0; i < temp.size(); i++) {
+				String name = temp.get(i).getKey().getName();
+				for (int j = 0; j < name.length(); j++) {
+					Code.loadConst(name.charAt(j));
+					Code.put(Code.putstatic);
+					Code.put2(Code.dataSize++);
+				}
+				Code.loadConst(-1);
+				Code.put(Code.putstatic);
+				Code.put2(Code.dataSize++);
+
+				Code.loadConst(temp.get(i).getValue());
+				Code.put(Code.putstatic);
+				Code.put2(Code.dataSize++);
+
+			}
+
+			Code.loadConst(-2);
+			Code.put(Code.putstatic);
+			Code.put2(Code.dataSize++);
+			Code.putJump(0);
+			nextStaticInitializerAdr = Code.pc - 2;
+		}
+
+		classDeclStart = false;
+		currentClass = null;
+		classExtends = null;
+
 	}
 
 }
