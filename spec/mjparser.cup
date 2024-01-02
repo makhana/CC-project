@@ -64,7 +64,7 @@ nonterminal NamespaceList, ConstVarClassDeclList, MethodDeclList;
 nonterminal Namespace, NamespaceName;
 nonterminal ConstDecl, SingleOrMultipleConstDecl, NumCharBoolConst, ConstDeclType;
 nonterminal VarDecl, VarDeclList, BracketsList, SingleOrMultipleVarDecl, VarDeclType;
-nonterminal ClassDecl, ExtendsType, StaticVarDeclList, StaticInitializerList, StaticInitializer, NoneOrSingleMethodDeclList, ClassName;
+nonterminal ClassDecl, StaticVarDeclList, StaticInitializerStart, StaticInitializer, NoneOrSingleMethodDeclList, StaticStart;
 
 nonterminal StaticVarDecl, StaticInitializers, InsertMethodsExtends;
 
@@ -79,7 +79,7 @@ nonterminal ActPars, ForLoopStart, IfStart, ElseStart, ThenBranch, ForLoopTop, F
 nonterminal Label, DesignatorType, DesignatorName;
 nonterminal Assignop, Relop, Addop, Mulop;
 
-nonterminal rs.etf.pp1.symboltable.concepts.Obj ProgName, Program, MethodDecl, MethodTypeName, Designator;
+nonterminal rs.etf.pp1.symboltable.concepts.Obj ProgName, Program, MethodDecl, MethodTypeName, Designator, ClassName, StaticInitializerList, ExtendsType;
 nonterminal rs.etf.pp1.symboltable.concepts.Struct Type, Expr, Factor, Term, Condition, CondTerm, CondFact;
 
 
@@ -131,17 +131,21 @@ StaticVarDeclList ::= (YesStaticVarDeclList) StaticVarDeclList StaticVarDecl
 					|(StaticInitializerL)  /* epsilon */
 					;
 					
-StaticVarDecl ::= STATIC VarDecl;
+StaticVarDecl ::= (StaticVarDecl) StaticStart VarDecl;
+
+StaticStart ::= (StaticStart) STATIC;
 					
 StaticInitializerList ::= (YesStaticInitializerList) StaticInitializers
 						| (NoStaticInitializerList) /* epsilon */
 						;
 						
-StaticInitializers ::= (Nesto1) StaticInitializer
-					| (Nesto2) StaticInitializers StaticInitializer
+StaticInitializers ::= (SingleStaticInitializer) StaticInitializer
+					| (MultipleStaticInitializer) StaticInitializers StaticInitializer
 					;
 
-StaticInitializer ::=  (Nesto3) STATIC LBRACE StatementList RBRACE;
+StaticInitializer ::=  (StaticInitializer) StaticInitializerStart LBRACE StatementList RBRACE;
+
+StaticInitializerStart ::= (StaticInitializerStart) STATIC;
 
 
 NoneOrSingleMethodDeclList ::= (SingleMethodDeclList) LBRACE InsertMethodsExtends MethodDeclList RBRACE
