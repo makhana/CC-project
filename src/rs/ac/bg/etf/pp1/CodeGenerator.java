@@ -307,22 +307,6 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put2(i+1);
 			}
 		}
-
-//		Expr expr = assignmentStatement.getExpr();
-//		if (expr instanceof ExprTerm) {
-//			Term term = ((ExprTerm) expr).getTerm();
-//			if (term instanceof SingleTerm) {
-//				Factor factor = ((SingleTerm) term).getFactor();
-//				if (factor instanceof FactorNewType) {
-//
-//					Code.load(assignmentStatement.getDesignator().obj);
-//					Code.loadConst(classTVFAdr.get(assignmentStatement.getExpr().struct));
-//					Code.put(Code.putfield);
-//					Code.put2(0);
-//				}
-//			}
-//		}
-
 	}
 
 	public void visit(IncDesignatorStatement incDesignatorStatement) {
@@ -409,14 +393,14 @@ public class CodeGenerator extends VisitorAdaptor {
 		for (Obj obj : temp) {
 
 			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
-				// prvi parametar je this znaci ovo je metoda klase
+				// first parameter is this meaning this is class method
 
 				if (foundClassMember == false) {
-					// kada smo unutar klase i unutar metode ovo je implicitno this
+					// when we are inside class method we load implicit THIS
 					Code.load(thisObj);
 					Code.load(thisObj);
 				} else {
-					// polje klase
+					// class field
 					Code.put(Code.getstatic);
 					Code.put2(staticField);
 					foundClassMember = false;
@@ -432,7 +416,7 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put4(-1);
 
 			} else {
-				// obicna metoda
+				// regular method
 				int offset = functionObj.getAdr() - Code.pc;
 				Code.put(Code.call);
 				Code.put2(offset);
@@ -441,7 +425,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 		if (temp.isEmpty()) {
-			// obicna metoda
+			// regular method
 			int offset = functionObj.getAdr() - Code.pc;
 			Code.put(Code.call);
 			Code.put2(offset);
@@ -460,14 +444,14 @@ public class CodeGenerator extends VisitorAdaptor {
 		for (Obj obj : temp) {
 
 			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
-				// prvi parametar je this znaci ovo je metoda klase
+				// first parameter is this meaning this is class method
 
 				if (foundClassMember == false) {
-					// kada smo unutar klase i unutar metode ovo je implicitno this
+					// when we are inside class method we load implicit THIS
 					Code.load(thisObj);
 					Code.load(thisObj);
 				} else {
-					// polje klase
+					// class field
 					Code.put(Code.getstatic);
 					Code.put2(staticField);
 					foundClassMember = false;
@@ -483,7 +467,7 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put4(-1);
 
 			} else {
-				// obicna metoda
+				// regular method
 				int offset = functionObj.getAdr() - Code.pc;
 				Code.put(Code.call);
 				Code.put2(offset);
@@ -510,14 +494,14 @@ public class CodeGenerator extends VisitorAdaptor {
 		for (Obj obj : temp) {
 
 			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
-				// prvi parametar je this znaci ovo je metoda klase
+				// first parameter is this meaning this is class method
 
 				if (foundClassMember == false) {
-					// kada smo unutar klase i unutar metode ovo je implicitno this
+					// when we are inside class method we load implicit THIS
 					Code.load(thisObj);
 					Code.load(thisObj);
 				} else {
-					// polje neke klase
+					// class field
 					Code.put(Code.getstatic);
 					Code.put2(staticField);
 					foundClassMember = false;
@@ -533,7 +517,7 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put4(-1);
 
 			} else {
-				// obicna metoda
+				// regular method
 				int offset = functionObj.getAdr() - Code.pc;
 				Code.put(Code.call);
 				Code.put2(offset);
@@ -542,7 +526,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 		if (temp.isEmpty()) {
-			// obicna metoda
+			// regular method
 			int offset = functionObj.getAdr() - Code.pc;
 			Code.put(Code.call);
 			Code.put2(offset);
@@ -557,14 +541,14 @@ public class CodeGenerator extends VisitorAdaptor {
 		for (Obj obj : temp) {
 
 			if (obj.getType().getKind() == Struct.Class && obj.getName() == "this") {
-				// prvi parametar je this znaci ovo je metoda klase
+				// first parameter is this meaning this is class method
 
 				if (foundClassMember == false) {
-					// kada smo unutar klase i unutar metode ovo je implicitno this
+					// when we are inside class method we load implicit THIS
 					Code.load(thisObj);
 					Code.load(thisObj);
 				} else {
-					// polje neke klase
+					// class field
 					Code.put(Code.getstatic);
 					Code.put2(staticField);
 					foundClassMember = false;
@@ -580,7 +564,7 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put4(-1);
 
 			} else {
-				// obicna metoda
+				// regular method
 				int offset = functionObj.getAdr() - Code.pc;
 				Code.put(Code.call);
 				Code.put2(offset);
@@ -589,7 +573,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 		if (temp.isEmpty()) {
-			// obicna metoda
+			// regular method
 			int offset = functionObj.getAdr() - Code.pc;
 			Code.put(Code.call);
 			Code.put2(offset);
@@ -652,7 +636,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 		if (AssignopDesignatorStatement.class == parent.getClass()) {
-			// stack: adr, index -> dupliraj
+			// stack: adr, index -> double it
 			Code.put(Code.dup2);
 		}
 	}
@@ -666,7 +650,7 @@ public class CodeGenerator extends VisitorAdaptor {
 		} else {
 			if ((FactorDesignator.class == parent.getClass() || DesignatorArrayElem.class == parent.getClass()
 					|| DesignatorEq.class == parent.getClass() || DesignatorMul.class == parent.getClass())) {
-				// ucitavam ceo fld
+				// load the whole field
 				Code.load(des.obj);
 				Code.load(designator.obj);
 
@@ -681,11 +665,6 @@ public class CodeGenerator extends VisitorAdaptor {
 				Code.put2(staticField); // adresa pomocne staticke promenljive
 				foundClassMember = true;
 
-//				Code.put(Code.getstatic);
-//				Code.put2(staticField);
-//				Code.loadConst(classTVFAdr.get(des.obj.getType()));
-//				Code.put(Code.putfield);
-//				Code.put2(0);
 			} else {
 
 				// ovo se radi kada je assignment statement, inc, dec itd
@@ -724,7 +703,6 @@ public class CodeGenerator extends VisitorAdaptor {
 				}
 			}
 		}
-
 	}
 
 	/*
@@ -820,8 +798,6 @@ public class CodeGenerator extends VisitorAdaptor {
 		}
 
 	}
-	
-	
 
 	/*
 	 * 
@@ -876,7 +852,7 @@ public class CodeGenerator extends VisitorAdaptor {
 	}
 
 	public void visit(IfStatement ifStatement) {
-		// ovde se skace kada je na AFTER THEN
+		// jump on AFTER THEN
 		listToFillJumps = jumpOnAfterThen.pop();
 		while (listToFillJumps.size() != 0) {
 			int adr = listToFillJumps.remove(listToFillJumps.size() - 1);
@@ -885,7 +861,7 @@ public class CodeGenerator extends VisitorAdaptor {
 	}
 
 	public void visit(IfElseStatement ifStatement) {
-		// ovde se skace kada je na AFTER THEN
+		// jump on AFTER THEN
 		listToFillJumps = jumpOnAfterThen.pop();
 		while (listToFillJumps.size() != 0) {
 			int adr = listToFillJumps.remove(listToFillJumps.size() - 1);
